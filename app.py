@@ -1,24 +1,28 @@
 import streamlit as st
-from openai import OpenAI
+from openai import OpenAI # We still use this library because it's compatible!
 
-st.set_page_config(page_title="The Why Engine", page_icon="🤔")
+st.set_page_config(page_title="The Why Engine (Gemini)", page_icon="🤔")
 
-# Sidebar for API Key
 with st.sidebar:
     st.title("Settings")
-    api_key = st.text_input("OpenAI API Key", type="password")
-    st.info("This app uses GPT-4o to simulate 3 agents questioning a topic until they reach first principles.")
+    # Change the label so you know it's for Gemini now
+    api_key = st.text_input("Gemini API Key", type="password")
+    st.info("Using Gemini 2.5 Flash via Google AI Studio.")
 
 if not api_key:
-    st.warning("Please enter your OpenAI API Key to start.")
+    st.warning("Please enter your Gemini API Key to start.")
     st.stop()
 
-client = OpenAI(api_key=api_key)
+# --- THE MAGIC CHANGE ---
+# We tell the app to talk to Google instead of OpenAI
+client = OpenAI(
+    api_key=api_key,
+    base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
+)
 
-# --- Agent Logic ---
 def agent_call(role_prompt, user_content):
     response = client.chat.completions.create(
-        model="gpt-4o",
+        model="gemini-2.5-flash", # Use Google's fast, free model
         messages=[
             {"role": "system", "content": role_prompt},
             {"role": "user", "content": user_content}
@@ -27,57 +31,37 @@ def agent_call(role_prompt, user_content):
     )
     return response.choices[0].message.content
 
-# --- UI Setup ---
+# --- UI Setup (Same as before) ---
 st.title("🤔 The 'Why' Engine")
-st.caption("A multi-agent system that drills down to the root cause.")
-
-topic = st.text_input("Enter a topic or claim to investigate:", placeholder="e.g., Why do we use salt on icy roads?")
+topic = st.text_input("Enter a topic:", placeholder="e.g., Why is the sky blue?")
 
 if st.button("Start Investigation"):
     iteration = 1
-    max_iterations = 5
     consensus = False
+    current_answer = agent_call("You are an expert Proposer. Provide a concise answer.", f"Explain: {topic}")
     
-    # 1. Initial Answer
-    with st.status("Proposer generating initial answer...", expanded=True) as status:
-        current_answer = agent_call("You are an expert Proposer. Provide a concise, clear answer.", f"Explain: {topic}")
+    with st.status("Investigating...", expanded=True) as status:
         st.write(f"**Initial Answer:** {current_answer}")
         
-        while not consensus and iteration <= max_iterations:
+        while not consensus and iteration <= 5:
             st.markdown(f"### 🔄 Iteration {iteration}")
             
-            # 2. Interrogators
-            col1, col2 = st.columns(2)
+            # Interrogators
+            why_skeptic = agent_call("You are 'The Skeptic'. Ask a piercing 'Why' question.", current_answer)
+            why_analyst = agent_call("You are 'The Analyst'. Ask a 'Why' question focusing on first principles.", current_answer)
             
-            with col1:
-                st.subheader("🕵️ The Skeptic")
-                why_skeptic = agent_call("You are 'The Skeptic'. Ask a short, piercing 'Why' question focusing on logical gaps.", current_answer)
-                st.info(why_skeptic)
-                
-            with col2:
-                st.subheader("🧐 The Analyst")
-                why_analyst = agent_call("You are 'The Analyst'. Ask a short 'Why' question focusing on first principles and physics/human nature.", current_answer)
-                st.info(why_analyst)
+            st.info(f"**Skeptic:** {why_skeptic}")
+            st.info(f"**Analyst:** {why_analyst}")
             
-            # 3. Consensus Check
-            decision = agent_call(
-                "You are the Judge. If the answer is fundamental and leaves no more room for 'Why', reply 'AGREE'. Otherwise, reply 'CONTINUE'.",
-                f"Current Answer: {current_answer}\nQuestions: {why_skeptic}, {why_analyst}"
-            )
+            # Check for Consensus
+            decision = agent_call("If the answer is fundamental, reply 'AGREE'. Otherwise, 'CONTINUE'.", f"Answer: {current_answer}")
             
             if "AGREE" in decision.upper():
                 consensus = True
-                status.update(label="✅ Consensus Reached!", state="complete")
-                st.success("The agents have agreed upon a fundamental root cause.")
+                status.update(label="✅ Root Cause Found!", state="complete")
             else:
                 iteration += 1
-                current_answer = agent_call(
-                    "You are the Proposer. Refine your answer to be more fundamental by addressing the two 'Why' questions provided.",
-                    f"Old Answer: {current_answer}\nQuestions: {why_skeptic}, {why_analyst}"
-                )
+                current_answer = agent_call("Incorporate these 'Whys' into a deeper answer.", f"Old: {current_answer}\nQuestions: {why_skeptic}, {why_analyst}")
                 st.write(f"**Refined Answer:** {current_answer}")
 
-    st.balloons()
-    st.markdown("---")
-    st.subheader("Final Agreed-Upon Truth:")
-    st.write(current_answer)
+    st.success(f"Final Truth: {current_answer}")
